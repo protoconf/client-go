@@ -1,0 +1,24 @@
+{
+  "admins": {
+    "anubis": "GOD_MODE",
+    "ra": "READ_WRITE"
+  },
+  "crawlers": [
+    {
+      "userAgent": "Linux/",
+      "httpTimeout": 30
+    },
+    {
+      "userAgent": "Android/",
+      "httpTimeout": 15,
+      "followRedirects": true
+    }
+  ],
+  "dbPassword": {
+    "charSecret": {
+      "char": "x",
+      "length": 23
+    }
+  },
+  "logLevel": 2
+}
