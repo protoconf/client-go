@@ -91,7 +91,7 @@ func Test_LoadConfig(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			c, _ := NewConfiguration(&config, tt.args.serviceName, slog.New(handler))
+			c, _ := NewConfiguration(&config, tt.args.serviceName, WithLogger(slog.New(handler)))
 			if err := c.LoadConfig(tt.args.configPath, tt.args.configName); (err != nil) != tt.wantErr {
 				t.Errorf("LoadConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -113,7 +113,7 @@ func TestConfigFileChanges(t *testing.T) {
 	c := &pb.CrawlerService{}
 	handler := slog.NewJSONHandler(io.Discard, nil)
 	logger := slog.New(handler)
-	config, _ := NewConfiguration(c, "test_config.json", logger, WithAgentStub(mock.Stub))
+	config, _ := NewConfiguration(c, "test_config.json", WithLogger(logger), WithAgentStub(mock.Stub))
 
 	// Load the config
 	err := os.WriteFile(filepath.Join(testDir, "config.json"), []byte("{\"logLevel\":12}"), 0644)
@@ -151,7 +151,7 @@ func TestConfigFileChangesWithAgent(t *testing.T) {
 	c := &pb.CrawlerService{}
 	agent := newProtoconfAgentMock(&pb.CrawlerService{LogLevel: 21})
 	handler := slog.NewJSONHandler(io.Discard, nil)
-	config, err := NewConfiguration(c, "test_config.json", slog.New(handler), WithAgentStub(agent.Stub))
+	config, err := NewConfiguration(c, "test_config.json", WithLogger(slog.New(handler)), WithAgentStub(agent.Stub))
 	assert.NoError(t, err)
 	require.NotNil(t, config)
 

@@ -52,11 +52,17 @@ func WithAgentStub(stub pc.ProtoconfServiceClient) Option {
 	}
 }
 
+func WithLogger(logger *slog.Logger) Option {
+	return func(c *Configuration) {
+		c.logger = logger
+	}
+}
+
 // NewConfiguration creates a new Configuration instance with the given proto.Message,
-// service name, logger, and optional options.
+// service name and optional options.
 // It initializes the fsnotify watcher, sets the unmarshal options, and initializes other fields.
 // If any error occurs during the watcher creation, it returns an error.
-func NewConfiguration(p proto.Message, serviceName string, logger *slog.Logger, opts ...Option) (*Configuration, error) {
+func NewConfiguration(p proto.Message, serviceName string, opts ...Option) (*Configuration, error) {
 	fsnotifyWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -65,7 +71,7 @@ func NewConfiguration(p proto.Message, serviceName string, logger *slog.Logger, 
 	config := &Configuration{
 		msg:             p,
 		serviceName:     serviceName,
-		logger:          logger,
+		logger:          slog.Default(),
 		isLoaded:        &atomic.Bool{},
 		isWatchingFile:  &atomic.Bool{},
 		isWatchingAgent: &atomic.Bool{},
