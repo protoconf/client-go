@@ -3,24 +3,18 @@ package protoconf_loader
 import (
 	"context"
 	"io"
-	"log"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	protoconfagent "github.com/protoconf/protoconf/agent/api/proto/v1"
+	"github.com/protoconf/client-go/mockagent"
 	pb "github.com/protoconf/protoconf/examples/protoconf/src/crawler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 /**
@@ -109,7 +103,7 @@ func TestConfigFileChanges(t *testing.T) {
 	// Initialize the Configuration struct
 	testDir := t.TempDir()
 
-	mock := newProtoconfAgentMock(&pb.CrawlerService{LogLevel: 12})
+	mock := mockagent.NewProtoconfAgentMock(&pb.CrawlerService{LogLevel: 12})
 	c := &pb.CrawlerService{}
 	handler := slog.NewJSONHandler(io.Discard, nil)
 	logger := slog.New(handler)
@@ -149,7 +143,7 @@ func TestConfigFileChanges(t *testing.T) {
 
 func TestConfigFileChangesWithAgent(t *testing.T) {
 	c := &pb.CrawlerService{}
-	agent := newProtoconfAgentMock(&pb.CrawlerService{LogLevel: 21})
+	agent := mockagent.NewProtoconfAgentMock(&pb.CrawlerService{LogLevel: 21})
 	handler := slog.NewJSONHandler(io.Discard, nil)
 	config, err := NewConfiguration(c, "test_config.json", WithLogger(slog.New(handler)), WithAgentStub(agent.Stub))
 	assert.NoError(t, err)
@@ -193,71 +187,4 @@ func TestGetHostName(t *testing.T) {
 			assert.Equal(t, tt.conf.getHostname(), tt.expectedHostname)
 		})
 	}
-}
-
-type mockResponse struct {
-	wait     time.Duration
-	response *protoconfagent.ConfigUpdate
-}
-
-type protoconfAgentMock struct {
-	protoconfagent.UnimplementedProtoconfServiceServer
-	responses []*mockResponse
-	Chan      chan *protoconfagent.ConfigUpdate
-	Stub      protoconfagent.ProtoconfServiceClient
-	initial   proto.Message
-}
-
-func newProtoconfAgentMock(initial proto.Message, responses ...*mockResponse) *protoconfAgentMock {
-	buffer := 1024 * 1024
-	lis := bufconn.Listen(buffer)
-	ctx := context.Background()
-	rpcServer := grpc.NewServer()
-	srv := &protoconfAgentMock{responses: responses, Chan: make(chan *protoconfagent.ConfigUpdate), initial: initial}
-	protoconfagent.RegisterProtoconfServiceServer(rpcServer, srv)
-	go func() {
-		context.AfterFunc(ctx, func() {
-			rpcServer.GracefulStop()
-		})
-		if err := rpcServer.Serve(lis); err != nil {
-			log.Printf("error serving server: %v", err)
-		}
-	}()
-
-	conn, err := grpc.DialContext(ctx, "",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Printf("error connecting to server: %v", err)
-	}
-	srv.Stub = protoconfagent.NewProtoconfServiceClient(conn)
-	return srv
-}
-
-func (p protoconfAgentMock) SubscribeForConfig(request *protoconfagent.ConfigSubscriptionRequest, srv protoconfagent.ProtoconfService_SubscribeForConfigServer) error {
-	go func() {
-		for _, r := range p.responses {
-			time.Sleep(r.wait)
-			srv.Send(r.response)
-		}
-	}()
-	for {
-		select {
-		case <-srv.Context().Done():
-			return srv.Context().Err()
-		case update := <-p.Chan:
-			srv.Send(update)
-		}
-	}
-}
-
-func (p protoconfAgentMock) SendUpdate(msg proto.Message) {
-	v, _ := anypb.New(msg)
-	update := &protoconfagent.ConfigUpdate{
-		Value: v,
-	}
-	go func() {
-		p.Chan <- update
-	}()
 }
