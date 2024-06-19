@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package demoapp.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+
+option go_package = "github.com/protoconf/client-go/demoapp/config/src/demo/v1;democonfig";
+
+message DemoConfig {
+  string pod_name = 1;
+  string title = 2;
+  string version = 3;
+  LogLevel log_level = 4;
+  google.protobuf.Duration timeout = 5;
+  google.protobuf.Timestamp last_update = 6;
+  uint64 total_requests = 7;
+
+  enum LogLevel {
+    LOG_LEVEL_UNSPECIFIED = 0;
+    LOG_LEVEL_DEBUG = 1;
+    LOG_LEVEL_INFO = 2;
+    LOG_LEVEL_WARN = 3;
+    LOG_LEVEL_ERROR = 4;
+  }
+}

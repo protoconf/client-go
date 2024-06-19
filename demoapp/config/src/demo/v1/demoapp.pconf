@@ -1,0 +1,22 @@
+# vim: syntax=python
+load("//demo/v1/config.proto", "DemoConfig")
+load("//google/protobuf/duration.proto", "Duration")
+
+
+
+def main():
+    config = DemoConfig(
+        title="hello protoconf go-client!",
+        version="1.0.1",
+        log_level=DemoConfig.LogLevel.LOG_LEVEL_INFO,
+    )
+
+    return ConfigRollout(
+        config,
+        # default_cooldown_time=Duration(seconds=20),
+        stages=[
+            RolloutStage(channel="p1", percentile=20),
+            RolloutStage(channel="p2", percentile=50),
+            RolloutStage(channel="p3", percentile=90),
+        ],
+    )
