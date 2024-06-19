@@ -26,7 +26,7 @@ const (
 
 type Configuration struct {
 	msg              proto.Message
-	serviceName      string
+	configPath       string
 	logger           *slog.Logger
 	isLoaded         *atomic.Bool
 	isWatchingFile   *atomic.Bool
@@ -59,10 +59,10 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // NewConfiguration creates a new Configuration instance with the given proto.Message,
-// service name and optional options.
+// config path and optional options.
 // It initializes the fsnotify watcher, sets the unmarshal options, and initializes other fields.
 // If any error occurs during the watcher creation, it returns an error.
-func NewConfiguration(p proto.Message, serviceName string, opts ...Option) (*Configuration, error) {
+func NewConfiguration(p proto.Message, configPath string, opts ...Option) (*Configuration, error) {
 	fsnotifyWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func NewConfiguration(p proto.Message, serviceName string, opts ...Option) (*Con
 
 	config := &Configuration{
 		msg:             p,
-		serviceName:     serviceName,
+		configPath:      configPath,
 		logger:          slog.Default(),
 		isLoaded:        &atomic.Bool{},
 		isWatchingFile:  &atomic.Bool{},
@@ -128,7 +128,7 @@ func (c *Configuration) WatchConfig(ctx context.Context) error {
 
 	// Watch agent changes
 	if !c.isWatchingAgent.Load() {
-		if err := c.listenToChanges(c.serviceName, ctx); err != nil {
+		if err := c.listenToChanges(c.configPath, ctx); err != nil {
 			return err
 		}
 		c.isWatchingAgent.Store(true)
@@ -136,7 +136,7 @@ func (c *Configuration) WatchConfig(ctx context.Context) error {
 
 	c.logger.Info(
 		"Successfully watching config",
-		slog.String("watching_agent_path", c.serviceName),
+		slog.String("watching_agent_path", c.configPath),
 		slog.String("watching_file", c.configFile))
 
 	return nil
