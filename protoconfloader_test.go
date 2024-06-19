@@ -171,6 +171,25 @@ func TestConfigFileChangesWithAgent(t *testing.T) {
 	assert.Equal(t, int32(22), config.Int32(c.GetLogLevel))
 }
 
+func TestConfigFileChangesWithNoAgentConnection(t *testing.T) {
+	c := &pb.CrawlerService{}
+	handler := slog.NewJSONHandler(io.Discard, nil)
+	config, err := NewConfiguration(c, "test_config.json", WithLogger(slog.New(handler)))
+	config.Host = "none"
+	assert.NoError(t, err)
+	testDir := t.TempDir()
+	err = os.WriteFile(filepath.Join(testDir, "config.json"), []byte("{\"logLevel\":21}"), 0644)
+	require.NoError(t, err)
+	err = config.LoadConfig(testDir, "config.json")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = config.WatchConfig(ctx)
+	require.Error(t, err)
+
+}
+
 func TestGetHostName(t *testing.T) {
 	tests := []struct {
 		name             string
