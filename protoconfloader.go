@@ -114,10 +114,6 @@ func (c *Configuration) LoadConfig(configPath string, configName string) error {
 // It watches for file changes and agent updates using separate goroutines.
 // The method logs the successful start of watching and returns nil upon successful completion.
 func (c *Configuration) WatchConfig(ctx context.Context) error {
-	if !c.isLoaded.Load() {
-		return errors.New("config is not loaded yet")
-	}
-
 	// Watch config file changes
 	if !c.isWatchingFile.Load() {
 		if err := c.watchFileChanges(); err != nil {
