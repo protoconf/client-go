@@ -1,3 +1,5 @@
 ignore:
   - "**/*.pb.go"
   - "demoapp"
+  - "mockagent/agent.go"
+
