@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 
 	pc "github.com/protoconf/protoconf/agent/api/proto/v1"
 	"google.golang.org/grpc"
@@ -28,9 +27,9 @@ type Configuration struct {
 	msg              proto.Message
 	configPath       string
 	logger           *slog.Logger
-	isLoaded         *atomic.Bool
-	isWatchingFile   *atomic.Bool
-	isWatchingAgent  *atomic.Bool
+	isLoaded         *sync.Once
+	isWatchingFile   *sync.Once
+	isWatchingAgent  *sync.Once
 	configFile       string
 	fsnotifyWatcher  *fsnotify.Watcher
 	mu               sync.RWMutex
@@ -72,9 +71,9 @@ func NewConfiguration(p proto.Message, configPath string, opts ...Option) (*Conf
 		msg:             p,
 		configPath:      configPath,
 		logger:          slog.Default(),
-		isLoaded:        &atomic.Bool{},
-		isWatchingFile:  &atomic.Bool{},
-		isWatchingAgent: &atomic.Bool{},
+		isLoaded:        &sync.Once{},
+		isWatchingFile:  &sync.Once{},
+		isWatchingAgent: &sync.Once{},
 		mu:              sync.RWMutex{},
 
 		fsnotifyWatcher: fsnotifyWatcher,
@@ -97,16 +96,15 @@ func NewConfiguration(p proto.Message, configPath string, opts ...Option) (*Conf
 // Finally, it sets the isLoaded field to true and returns nil.
 // If there is an error during loading the configuration, it returns the error.
 func (c *Configuration) LoadConfig(configPath string, configName string) error {
-	if c.isLoaded.Load() {
-		return nil
-	}
-	c.configFile = filepath.Join(configPath, configName)
-	err := c.loadConfig()
-	if err != nil {
-		return err
-	}
-	c.isLoaded.Store(true)
-	return nil
+	var err error
+	c.isLoaded.Do(func() {
+		c.configFile = filepath.Join(configPath, configName)
+		err = c.loadConfig()
+		if err != nil {
+			c.isLoaded = new(sync.Once)
+		}
+	})
+	return err
 }
 
 // WatchConfig starts watching the configuration file and the agent for changes.
@@ -115,19 +113,26 @@ func (c *Configuration) LoadConfig(configPath string, configName string) error {
 // The method logs the successful start of watching and returns nil upon successful completion.
 func (c *Configuration) WatchConfig(ctx context.Context) error {
 	// Watch config file changes
-	if !c.isWatchingFile.Load() {
-		if err := c.watchFileChanges(); err != nil {
-			return err
-		}
-		c.isWatchingFile.Store(true)
-	}
 
-	// Watch agent changes
-	if !c.isWatchingAgent.Load() {
-		if err := c.listenToChanges(c.configPath, ctx); err != nil {
-			return err
+	var err error
+	c.isWatchingFile.Do(func() {
+		err = c.watchFileChanges()
+		if err != nil {
+			c.isWatchingFile = new(sync.Once)
 		}
-		c.isWatchingAgent.Store(true)
+	})
+	if err != nil {
+		return err
+	}
+	// Watch agent changes
+	c.isWatchingAgent.Do(func() {
+		err = c.listenToChanges(c.configPath, ctx)
+		if err != nil {
+			c.isWatchingAgent = new(sync.Once)
+		}
+	})
+	if err != nil {
+		return err
 	}
 
 	c.logger.Info(
@@ -155,7 +160,7 @@ func (c *Configuration) watchFileChanges() error {
 			case event, ok := <-c.fsnotifyWatcher.Events:
 				if !ok {
 					c.logger.Error("error while watching config file", slog.Any("event", event))
-					c.isWatchingFile.Store(false)
+					c.isWatchingFile = new(sync.Once)
 					return
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
@@ -176,13 +181,11 @@ func (c *Configuration) watchFileChanges() error {
 // StopWatching stops watching the configuration file and the agent for changes.
 // It closes the fsnotifyWatcher and cancels the context for the agent connection.
 func (c *Configuration) StopWatching() {
-	if c.isWatchingFile.Load() {
+	if c.isWatchingFile != nil {
 		c.fsnotifyWatcher.Close()
 	}
-	if c.isWatchingAgent.Load() {
-		c.CancelAgent()
-		c.isWatchingAgent.Store(false)
-	}
+	c.CancelAgent()
+	c.isWatchingAgent = new(sync.Once)
 }
 
 // LoadConfig loads the configuration from the specified configPath and configName.
