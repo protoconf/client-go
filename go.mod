@@ -6,13 +6,13 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/protoconf/protoconf v0.1.7
 	github.com/stretchr/testify v1.9.0
-	google.golang.org/grpc v1.56.3
+	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.2
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/sys v0.18.0 // indirect
