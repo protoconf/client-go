@@ -5,7 +5,7 @@ go 1.22.4
 require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/protoconf/protoconf v0.1.7
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.56.3
 	google.golang.org/protobuf v1.33.0
 )
