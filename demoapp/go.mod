@@ -4,7 +4,7 @@ go 1.22.4
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/protoconf/client-go v0.0.0-20240621134226-0e3798a7cfb9
+	github.com/protoconf/client-go 9c8c2d9cf48a
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.52.0
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.27.0
