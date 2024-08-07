@@ -3,6 +3,7 @@ module github.com/protoconf/client-go
 go 1.22.4
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/protoconf/protoconf v0.1.7
 	github.com/stretchr/testify v1.9.0
