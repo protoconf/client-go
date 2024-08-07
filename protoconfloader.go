@@ -12,7 +12,9 @@ import (
 
 	pc "github.com/protoconf/protoconf/agent/api/proto/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/fsnotify/fsnotify"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -235,25 +237,71 @@ func (c *Configuration) loadConfig() error {
 // It starts a goroutine to handle the received configuration updates by calling the handleConfigUpdates method.
 // Finally, it returns nil.
 func (c *Configuration) listenToChanges(path string, ctx context.Context) error {
-	psc := c.agentStub
-	if psc == nil {
-		address := c.getHostname()
-
-		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			c.logger.Error("Error connecting to server ", slog.String("address", address), slog.Any("error", err))
-			return err
-		}
-
-		psc = pc.NewProtoconfServiceClient(conn)
+	/*configs := []retry.Option{
+		retry.Attempts(uint(1)),
+		retry.OnRetry(func(n uint, err error) {
+			c.logger.Error("Retry request ", slog.Int("#", int(n+1)), slog.Any("error", err))
+		}),
+		retry.Delay(time.Second),
 	}
-	stream, err := psc.SubscribeForConfig(ctx, &pc.ConfigSubscriptionRequest{Path: path})
+	err := retry.Do(func() error {
+		err := c.connectAndListen(path, ctx)
+		if err != nil {
+			c.logger.Error("Error in agent communication, reconnecting",
+				slog.String("path", path),
+				slog.Any("error", err))
+
+		}
+		return err
+	},
+		configs...,
+	)*/
+	err := c.connectAndListen(path, ctx)
 	if err != nil {
-		c.logger.Error("Error subscribing for config", slog.String("path", path), slog.Any("error", err))
+		// Log an error if the WatchConfig function fails after all retry attempts.
+		c.logger.Error("failed communicate with the agent", "error", err)
+	}
+	return nil
+}
+func (c *Configuration) connectAndListen(path string, ctx context.Context) error {
+	address := c.getHostname()
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
 		return err
 	}
-	go c.handleConfigUpdates(stream, path)
-	return nil
+	defer conn.Close()
+
+	client := pc.NewProtoconfServiceClient(conn)
+
+	stream, err := client.SubscribeForConfig(ctx, &pc.ConfigSubscriptionRequest{Path: path})
+	if err != nil {
+		return err
+	}
+
+	for {
+		update, err := stream.Recv()
+		if err != nil {
+			if status.Code(err) == codes.Canceled {
+				return nil // Context cancelled, exit gracefully
+			}
+			return err // Any other error, retry connection
+		}
+
+		c.mu.Lock()
+		err = update.GetValue().UnmarshalTo(c.msg)
+		c.mu.Unlock()
+
+		if err != nil {
+			c.logger.Error("Error unmarshaling config update",
+				slog.String("path", path),
+				slog.Any("error", err))
+			continue
+		}
+
+		if c.onConfigChange != nil {
+			c.onConfigChange(c.msg)
+		}
+	}
 }
 
 // handleConfigUpdates listens for changes to the configuration and invokes the OnConfigChange function.
