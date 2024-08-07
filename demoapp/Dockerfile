@@ -1,5 +1,5 @@
 
-FROM golang:1.22.4-alpine as builder
+FROM golang:1.22.6-alpine as builder
 # Set the Current Working Directory inside the container
 WORKDIR /go/src/protoconf/demoapp
 
