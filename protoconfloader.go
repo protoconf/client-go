@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/avast/retry-go"
 	pc "github.com/protoconf/protoconf/agent/api/proto/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 
 	"github.com/fsnotify/fsnotify"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -23,6 +23,8 @@ import (
 
 const (
 	AgentDefaultAddress = ":4300"
+	RetryAttempts       = 3
+	RetryDelay          = 500 * time.Millisecond
 )
 
 type Configuration struct {
@@ -225,20 +227,20 @@ func (c *Configuration) loadConfig() error {
 	return nil
 }
 
-// listenToChanges is a method of the Configuration struct that establishes a connection to a server using gRPC and subscribes to receive configuration updates.
-// It takes a path string and a context.Context as parameters.
-// It first gets the hostname to use for the connection by calling the getHostname method.
-// Then it dials the server using the obtained address and insecure transport credentials.
-// If there is an error while dialing, it logs the error and returns it.
-// It creates a new ProtoconfServiceClient using the connection.
-// It creates a new context with cancellation capability using the provided context.
-// It subscribes for configuration updates by calling the SubscribeForConfig method of the ProtoconfServiceClient.
-// If there is an error while subscribing, it logs the error and returns it.
-// It starts a goroutine to handle the received configuration updates by calling the handleConfigUpdates method.
-// Finally, it returns nil.
+// listenToChanges establishes a connection to the Protoconf agent and listens for configuration changes.
+// It uses a retry mechanism to handle connection failures and reconnects automatically.
+//
+// Parameters:
+//   - path: A string representing the configuration path to subscribe to.
+//   - ctx: A context.Context for managing the lifecycle of the listening operation.
+//
+// Returns:
+//   - error: An error if the connection and listening process fails after all retry attempts,
+//     or nil if successful.
 func (c *Configuration) listenToChanges(path string, ctx context.Context) error {
-	/*configs := []retry.Option{
-		retry.Attempts(uint(1)),
+	configs := []retry.Option{
+		retry.Attempts(uint(RetryAttempts)),
+		retry.Delay(RetryDelay),
 		retry.OnRetry(func(n uint, err error) {
 			c.logger.Error("Retry request ", slog.Int("#", int(n+1)), slog.Any("error", err))
 		}),
@@ -255,53 +257,41 @@ func (c *Configuration) listenToChanges(path string, ctx context.Context) error 
 		return err
 	},
 		configs...,
-	)*/
-	err := c.connectAndListen(path, ctx)
-	if err != nil {
-		// Log an error if the WatchConfig function fails after all retry attempts.
-		c.logger.Error("failed communicate with the agent", "error", err)
-	}
-	return nil
+	)
+	return err
 }
+
+// connectAndListen establishes a connection to a server using gRPC and subscribes to receive configuration updates.
+// It takes a path string and a context.Context as parameters.
+//
+// The function first gets the hostname to use for the connection by calling the getHostname method.
+// Then it dials the server using the obtained address and insecure transport credentials.
+// If there is an error while dialing, it logs the error and returns it.
+//
+// It creates a new ProtoconfServiceClient using the connection.
+// It creates a new context with cancellation capability using the provided context.
+// It subscribes for configuration updates by calling the SubscribeForConfig method of the ProtoconfServiceClient.
+// If there is an error while subscribing, it logs the error and returns it.
+//
+// It starts a goroutine to handle the received configuration updates by calling the handleConfigUpdates method.
+// Finally, it returns nil.
 func (c *Configuration) connectAndListen(path string, ctx context.Context) error {
-	address := c.getHostname()
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	psc := c.agentStub
+	if psc == nil {
+		address := c.getHostname()
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			c.logger.Error("Error connecting to server ", slog.String("address", address), slog.Any("error", err))
+			return err
+		}
+		psc = pc.NewProtoconfServiceClient(conn)
+	}
+	stream, err := psc.SubscribeForConfig(ctx, &pc.ConfigSubscriptionRequest{Path: path})
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	client := pc.NewProtoconfServiceClient(conn)
-
-	stream, err := client.SubscribeForConfig(ctx, &pc.ConfigSubscriptionRequest{Path: path})
-	if err != nil {
-		return err
-	}
-
-	for {
-		update, err := stream.Recv()
-		if err != nil {
-			if status.Code(err) == codes.Canceled {
-				return nil // Context cancelled, exit gracefully
-			}
-			return err // Any other error, retry connection
-		}
-
-		c.mu.Lock()
-		err = update.GetValue().UnmarshalTo(c.msg)
-		c.mu.Unlock()
-
-		if err != nil {
-			c.logger.Error("Error unmarshaling config update",
-				slog.String("path", path),
-				slog.Any("error", err))
-			continue
-		}
-
-		if c.onConfigChange != nil {
-			c.onConfigChange(c.msg)
-		}
-	}
+	go c.handleConfigUpdates(stream, path)
+	return nil
 }
 
 // handleConfigUpdates listens for changes to the configuration and invokes the OnConfigChange function.
