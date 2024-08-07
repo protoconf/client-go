@@ -35,7 +35,7 @@ type Configuration struct {
 	mu               sync.RWMutex
 	UnmarshalOptions protojson.UnmarshalOptions
 	quit             chan bool
-	CancelAgent      context.CancelFunc
+	CancelWatcher    context.CancelFunc
 	Host             string
 	Port             int
 	agentStub        pc.ProtoconfServiceClient
@@ -115,8 +115,10 @@ func (c *Configuration) WatchConfig(ctx context.Context) error {
 	// Watch config file changes
 
 	var err error
+	var WatcherCtx context.Context
+	WatcherCtx, c.CancelWatcher = context.WithCancel(ctx)
 	c.isWatchingFile.Do(func() {
-		err = c.watchFileChanges()
+		err = c.watchFileChanges(WatcherCtx)
 		if err != nil {
 			c.isWatchingFile = new(sync.Once)
 		}
@@ -126,7 +128,7 @@ func (c *Configuration) WatchConfig(ctx context.Context) error {
 	}
 	// Watch agent changes
 	c.isWatchingAgent.Do(func() {
-		err = c.listenToChanges(c.configPath, ctx)
+		err = c.listenToChanges(c.configPath, WatcherCtx)
 		if err != nil {
 			c.isWatchingAgent = new(sync.Once)
 		}
@@ -148,7 +150,7 @@ func (c *Configuration) WatchConfig(ctx context.Context) error {
 // When a write event occurs, it calls the loadConfig method to reload the configuration.
 // If there is an error while watching or loading the configuration file, it logs the error.
 // The method returns an error if there is an error adding the file to the fsnotifyWatcher.
-func (c *Configuration) watchFileChanges() error {
+func (c *Configuration) watchFileChanges(ctx context.Context) error {
 	err := c.fsnotifyWatcher.Add(c.configFile)
 	if err != nil {
 		return err
@@ -157,6 +159,8 @@ func (c *Configuration) watchFileChanges() error {
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case event, ok := <-c.fsnotifyWatcher.Events:
 				if !ok {
 					c.logger.Error("error while watching config file", slog.Any("event", event))
@@ -184,7 +188,7 @@ func (c *Configuration) StopWatching() {
 	if c.isWatchingFile != nil {
 		c.fsnotifyWatcher.Close()
 	}
-	c.CancelAgent()
+	c.CancelWatcher()
 	c.isWatchingAgent = new(sync.Once)
 }
 
@@ -243,9 +247,7 @@ func (c *Configuration) listenToChanges(path string, ctx context.Context) error 
 
 		psc = pc.NewProtoconfServiceClient(conn)
 	}
-	var agentCtx context.Context
-	agentCtx, c.CancelAgent = context.WithCancel(ctx)
-	stream, err := psc.SubscribeForConfig(agentCtx, &pc.ConfigSubscriptionRequest{Path: path})
+	stream, err := psc.SubscribeForConfig(ctx, &pc.ConfigSubscriptionRequest{Path: path})
 	if err != nil {
 		c.logger.Error("Error subscribing for config", slog.String("path", path), slog.Any("error", err))
 		return err
