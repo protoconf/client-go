@@ -1,6 +1,6 @@
 module github.com/protoconf/client-go
 
-go 1.22.4
+go 1.23
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -8,7 +8,7 @@ require (
 	github.com/protoconf/protoconf v0.1.7
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.65.0
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
